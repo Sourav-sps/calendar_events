@@ -348,8 +348,9 @@ const AddEvent = () => {
         );
 
         dispatch(
-          CommonActions.navigate({
-            name: 'Home',
+          CommonActions.reset({
+            index: 1,
+            routes: [{name: 'Home'}],
           }),
         );
       } catch (err) {

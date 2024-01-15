@@ -1,9 +1,9 @@
 //import liraries
 import React, {
-  forwardRef,
+  memo,
   useCallback,
   useEffect,
-  useImperativeHandle,
+  useMemo,
   useRef,
   useState,
 } from 'react';
@@ -14,57 +14,38 @@ import {
   Pressable,
   Dimensions,
   TouchableOpacity,
-  Alert,
+  ScrollView,
+  ActivityIndicator,
+  ProgressBarAndroidBase,
 } from 'react-native';
-import {
-  CalendarList,
-  Calendar,
-  DateData,
-  LocaleConfig,
-  Agenda,
-} from 'react-native-calendars';
+import {CalendarList, LocaleConfig} from 'react-native-calendars';
 import Header from '../../component/header';
 import {Colors, Sizes} from '../../constant';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
-import moment, {Moment} from 'moment';
-import {NavigationProp, useNavigation} from '@react-navigation/native';
+import moment from 'moment';
+import {
+  NavigationProp,
+  useFocusEffect,
+  useNavigation,
+} from '@react-navigation/native';
 import {nativeStackType} from '../../navigation';
+import ReactNativeCalendarEvents, {
+  CalendarEventReadable,
+} from 'react-native-calendar-events';
+import {removeTag} from '../../utils';
+import CustomLoader from '../../component/CustomLoader';
 
 const {width} = Dimensions.get('window');
 const CALENDAR_WIDTH = width;
-type eventType = {
-  id: number;
-  time: string;
-  title: string;
-  startTime: string;
-  endTIme: string;
-  place: string;
-  hours: string;
-};
 
-type event = {
-  item: eventType;
-};
-const EVENT_DATA = [
-  {
-    id: 1,
-    time: '10:45 Am',
-    title: 'Daily meeting',
-    startTime: '10:30 am',
-    endTIme: '11:00 am',
-    place: 'US',
-    hours: '4 hrs',
-  },
-  {
-    id: 2,
-    time: '10:45 Am',
-    title: 'Daily meeting 2',
-    startTime: '10:30 am',
-    endTIme: '11:00 am',
-    place: 'US',
-    hours: '4 hrs',
-  },
-];
+interface FormattedData {
+  [date: string]: {
+    customStyles: any;
+    dotColor: string;
+    marked: boolean;
+    selected: boolean;
+  };
+}
 
 LocaleConfig.locales['en'] = {
   monthNames: [
@@ -98,26 +79,43 @@ LocaleConfig.defaultLocale = 'en';
 
 type calendarSectionType = {
   onDayPress: (date: moment.Moment) => void;
+  data: CalendarEventReadable[];
 };
 
-const CalendarSection = ({onDayPress}: calendarSectionType) => {
+const CalendarSection = memo(({onDayPress, data}: calendarSectionType) => {
   const [selectedDate, setSelectedDate] = useState(moment());
   const [month, setMonth] = useState(new Date());
   const calRef = useRef<any>();
 
-  const leftArrowPress = () => {
+  useEffect(() => {
+    const _month = month.getMonth() + 1;
+    const _year = month.getFullYear();
+    const day = selectedDate.format('DD');
+    var startDate = moment([_year, _month - 1]);
+
+    var endDate = moment(startDate).endOf('month').format('DD');
+
+    const date = `${day > endDate ? endDate : day}-${
+      _month > 9 ? _month : '0' + _month
+    }-${_year}`;
+
+    setSelectedDate(moment(date, 'DD-MM-YYYY'));
+    onDayPress(moment(date, 'DD-MM-YYYY'));
+  }, [month]);
+
+  const leftArrowPress = useCallback(() => {
     const momentDate = moment(month).subtract(1, 'months');
     const prevMonth = momentDate.toDate();
     setMonth(prevMonth);
     calRef.current?.scrollToMonth(prevMonth);
-  };
+  }, [month]);
 
-  const rightArrowPress = () => {
+  const rightArrowPress = useCallback(() => {
     const momentDate = moment(month).add(1, 'months');
     const nextMonth = momentDate.toDate();
     setMonth(nextMonth);
     calRef.current?.scrollToMonth(nextMonth);
-  };
+  }, [month]);
   const customHeader = () => {
     return (
       <View style={[styles.headerContaner, {width: CALENDAR_WIDTH * 0.9}]}>
@@ -147,51 +145,57 @@ const CalendarSection = ({onDayPress}: calendarSectionType) => {
     );
   };
 
-  type dateType = {
-    date: {
-      timestamp: number;
-    };
-  };
+  const getEventDate = useCallback(
+    (selectedDate: moment.Moment) => {
+      const result: FormattedData = {};
 
-  const renderDate = useCallback(
-    ({date: {timestamp}}: dateType) => {
-      const isPicked = moment(timestamp).isSame(moment(selectedDate), 'day');
-      const todayDate = moment(timestamp).isSame(moment(), 'day');
+      const selectedDateStyle = {
+        container: {
+          backgroundColor: Colors.colors.primary,
+          elevation: 2,
+        },
+        text: {
+          color: Colors.colors.white,
+        },
+      };
 
-      return (
-        <View style={styles.fakeDayContainer}>
-          <TouchableOpacity
-            onPress={() => {
-              setSelectedDate(moment(timestamp));
-              onDayPress(moment(timestamp));
-            }}
-            style={[
-              {
-                backgroundColor: isPicked
-                  ? Colors.colors.primary
-                  : 'transparet',
-              },
-              styles.dayContainer,
-            ]}>
-            <Text
-              style={[
-                styles.day,
-                {
-                  color: isPicked
-                    ? Colors.colors.white
-                    : todayDate
-                    ? Colors.colors.primary
-                    : Colors.colors.grey2,
-                },
-              ]}>
-              {moment(timestamp).format('DD')}
-            </Text>
-          </TouchableOpacity>
-        </View>
-      );
+      data.forEach((event: CalendarEventReadable) => {
+        const occurrenceDate = moment(event.startDate).format('YYYY-MM-DD');
+
+        const isSameDate = moment(occurrenceDate).isSame(
+          selectedDate.format('YYYY-MM-DD'),
+        );
+
+        result[occurrenceDate] = {
+          customStyles: isSameDate ? selectedDateStyle : {},
+          selected: isSameDate ? true : false,
+          dotColor: isSameDate ? Colors.colors.white : Colors.colors.primary,
+          marked: true,
+        };
+      });
+
+      return result;
     },
-    [selectedDate],
+    [data],
   );
+
+  const multiDotMarks = useMemo(() => {
+    return {
+      [moment(selectedDate).format('YYYY-MM-DD')]: {
+        customStyles: {
+          container: {
+            backgroundColor: Colors.colors.primary,
+            elevation: 2,
+          },
+          text: {
+            color: Colors.colors.white,
+          },
+        },
+        selected: true,
+      },
+      ...getEventDate(selectedDate),
+    };
+  }, [selectedDate, data]);
 
   return (
     <CalendarList
@@ -202,8 +206,14 @@ const CalendarSection = ({onDayPress}: calendarSectionType) => {
       calendarWidth={CALENDAR_WIDTH}
       renderHeader={customHeader}
       scrollEnabled={false}
+      markingType="dot"
+      markedDates={multiDotMarks}
+      onDayPress={day => {
+        setSelectedDate(moment(day.timestamp));
+        onDayPress(moment(day.timestamp));
+      }}
       // @ts-ignore
-      dayComponent={renderDate}
+      // dayComponent={renderDate}
       hideArrows
       theme={{
         // @ts-ignore
@@ -218,7 +228,7 @@ const CalendarSection = ({onDayPress}: calendarSectionType) => {
       }}
     />
   );
-};
+});
 
 interface AgendaScreenProps {}
 
@@ -348,12 +358,19 @@ interface AgendaEntry {
 // });
 
 type eventDataType = {
-  data: Array<T>;
+  data: Array<CalendarEventReadable>;
 };
+
 const CalEventSection = ({data}: eventDataType) => {
-  const eventSection = (item: eventType) => {
+  const {navigate} = useNavigation<NavigationProp<nativeStackType>>();
+
+  const detailAction = useCallback((event: CalendarEventReadable) => {
+    navigate('EventDetail', {event});
+  }, []);
+  const eventSection = (item: CalendarEventReadable) => {
+    const notes = item.description || item.notes;
     return (
-      <TouchableOpacity key={item.id}>
+      <TouchableOpacity onPress={() => detailAction(item)} key={item.id}>
         <View
           style={[
             styles.row,
@@ -366,28 +383,35 @@ const CalEventSection = ({data}: eventDataType) => {
           ]}>
           <View style={styles.leftSectionContainer}>
             <Text style={[styles.sectionMidText, {textAlign: 'center'}]}>
-              {item.time}
+              {moment(item.startDate).format('hh:mm a')}
             </Text>
           </View>
           <View style={styles.rightSectionContainer}>
             <View style={styles.rightContentContainer}>
-              <Text style={styles.sectionText}>{item.title}</Text>
+              <Text style={styles.sectionText}>{removeTag(item.title)}</Text>
               <View style={[styles.row, {justifyContent: 'flex-start'}]}>
                 <View style={[styles.row, {justifyContent: 'flex-start'}]}>
-                  <Text style={styles.sectionSmallText}>{item.startTime}</Text>
+                  <Text style={styles.sectionSmallText}>
+                    {moment(item.startDate).format('hh:mm a')}
+                  </Text>
                   <Text>{' - '}</Text>
-                  <Text style={styles.sectionSmallText}>{item.endTIme}</Text>
+                  <Text style={styles.sectionSmallText}>
+                    {moment(item.endDate).format('hh:mm a')}
+                  </Text>
                 </View>
-                <View style={styles.divider} />
-                <Text style={styles.sectionMidText}>{item.place}</Text>
               </View>
+              {notes && (
+                <Text numberOfLines={2} style={styles.sectionMidText}>
+                  {notes}
+                </Text>
+              )}
             </View>
             <Text
               style={[
                 styles.sectionMidText,
                 {paddingHorizontal: Sizes.space.medium},
               ]}>
-              {item.hours}
+              {moment(item.endDate).diff(item.startDate, 'hours') + ' Hrs'}
             </Text>
           </View>
         </View>
@@ -406,17 +430,77 @@ const CalEventSection = ({data}: eventDataType) => {
         ]}>
         Event
       </Text>
-      {data.map(eventSection)}
+      <ScrollView>{data.map(eventSection)}</ScrollView>
     </View>
   );
 };
 
 // create a component
 const Home = () => {
-  const childRef = useRef<any>();
   const navigation = useNavigation<NavigationProp<nativeStackType>>();
+  const [eventData, setEventData] = useState<any>([]);
+  const currentSelectedYear = useRef<moment.Moment>();
+  const [selectedDate, setSelectedDate] = useState<moment.Moment>(moment());
 
-  const onDayPress = (day: moment.Moment) => {};
+  const [loader, setLoader] = useState(false);
+
+  const getEvents = React.useCallback(() => {
+    (async () => {
+      const permission = await ReactNativeCalendarEvents.requestPermissions();
+
+      if (permission === 'authorized') {
+        if (
+          eventData[0]?.startDate &&
+          moment(moment(currentSelectedYear.current)).isSame(
+            moment(selectedDate),
+            'year',
+          )
+        ) {
+          return;
+        }
+
+        setLoader(true);
+
+        let events: CalendarEventReadable[];
+        // Get the current month's first and last date
+        const currentDate = moment(selectedDate);
+        const firstDateOfMonth = currentDate
+          .clone()
+          .startOf('year')
+          .toISOString();
+        const lastDateOfMonth = currentDate.clone().endOf('year').toISOString();
+
+        events = await ReactNativeCalendarEvents.fetchAllEvents(
+          firstDateOfMonth,
+          lastDateOfMonth,
+        );
+
+        currentSelectedYear.current = selectedDate;
+
+        if (events.length) setEventData(events);
+
+        setTimeout(() => {
+          setLoader(false);
+        }, 1000);
+      }
+    })();
+  }, [selectedDate]);
+
+  useFocusEffect(getEvents);
+
+  const onDayPress = (day: moment.Moment) => {
+    setSelectedDate(day);
+  };
+
+  const data = useMemo(
+    () =>
+      eventData.filter((event: CalendarEventReadable) => {
+        return moment(moment(event.startDate).format('DD-MM-YYYY')).isSame(
+          moment(selectedDate).format('DD-MM-YYYY'),
+        );
+      }),
+    [eventData, selectedDate],
+  );
 
   return (
     <View style={styles.container}>
@@ -426,13 +510,15 @@ const Home = () => {
           navigation.navigate('AddEvent');
         }}
       />
+
       <View style={styles.contentContainer}>
         <View
           style={[{width: CALENDAR_WIDTH, alignSelf: 'center'}, styles.shadow]}>
-          <CalendarSection {...{onDayPress}} />
+          <CalendarSection data={eventData} {...{onDayPress}} />
         </View>
-        <CalEventSection data={EVENT_DATA} />
+        <CalEventSection {...{data}} />
       </View>
+      {loader && <CustomLoader />}
     </View>
   );
 };
@@ -563,6 +649,12 @@ const styles = StyleSheet.create({
     marginHorizontal: Sizes.space.small,
     backgroundColor: Colors.colors.grey2,
     height: '80%',
+  },
+  dot: {
+    width: 5,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: Colors.colors.primary,
   },
 });
 

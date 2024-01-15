@@ -6,7 +6,9 @@ class Colors {
     grey0: '#c0c0c2',
     grey1: '#ebebed',
     grey2: '#8a8a8a',
+    grey3: '#3d3d3d',
     blue0: '#f5f7fa',
+    blue1: '#3d67f2',
   };
 }
 
